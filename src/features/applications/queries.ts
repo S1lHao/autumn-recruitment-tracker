@@ -35,7 +35,7 @@ type QueryResponse<T> = { data: T | null; error: unknown | null };
 type TargetMember = { id: string };
 type ActiveGrant = { id: string };
 type ActiveGrantLookup = { workspaceId: string; ownerId: string; granteeId: string; now: string };
-type CompanyRow = { id: string; name: string; website: string | null };
+type CompanyRow = { id: string; name: string; website: string | null; archived_at?: string | null };
 
 export type EditAccessDependencies = {
   findActiveGrant: (input: ActiveGrantLookup) => Promise<QueryResponse<ActiveGrant>>;
@@ -113,7 +113,7 @@ export async function listSharedCompaniesWithDeps(
   try {
     const response = await dependencies.listCompanies(member.workspaceId);
     if (response.error || !response.data) throw new Error("companies_query_failed");
-    return { ok: true, data: response.data.map((row) => ({ id: row.id, name: row.name, website: row.website })) };
+    return { ok: true, data: response.data.map((row) => ({ id: row.id, name: row.name, website: row.website, ...(row.archived_at !== undefined ? { archivedAt: row.archived_at } : {}) })) };
   } catch {
     return { ok: false, message: "共享公司库暂时无法加载，你仍可手动输入公司" };
   }
@@ -192,7 +192,7 @@ async function sessionListCompanies(workspaceId: string): Promise<QueryResponse<
   const supabase = await createServerClient();
   const response = await supabase
     .from("companies")
-    .select("id, name, website")
+    .select("id, name, website, archived_at")
     .eq("workspace_id", workspaceId)
     .order("name", { ascending: true });
   return { data: response.data as unknown as CompanyRow[] | null, error: response.error };

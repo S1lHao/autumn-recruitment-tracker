@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ActionResult } from "@/features/shared/result";
 import { createApplication, deleteApplication, updateApplication } from "./actions";
+import { deleteSharedCompany } from "./company-actions";
 import { ApplicationCards, CompanyWebsiteLink, PendingCompanyTasks } from "./application-cards";
 import { DeadlineValue, deadlinePresentation, formatApplicationDate } from "./application-display";
 import { unappliedCompanies } from "./company-catalog";
@@ -33,6 +34,7 @@ export type ApplicationListProps = {
   companyLoadError?: string;
   pendingCompanySearch?: string;
   showPendingCompanies?: boolean;
+  canManageCompanies?: boolean;
 };
 
 const SORTABLE_HEADERS: { field: SortableField; label: string }[] = [
@@ -81,8 +83,9 @@ function SortableHeader({ field, label, sortBy, direction, onSort }: {
   );
 }
 
-function ConfirmDeleteDialog({ application, error, isPending, onClose, onConfirm }: {
-  application: Application;
+function ConfirmDeleteDialog({ title, description, error, isPending, onClose, onConfirm }: {
+  title: string;
+  description: string;
   error: string;
   isPending: boolean;
   onClose: () => void;
@@ -137,8 +140,8 @@ function ConfirmDeleteDialog({ application, error, isPending, onClose, onConfirm
   return (
     <dialog aria-labelledby="delete-application-title" aria-modal="true" className="dialog-backdrop" onKeyDown={trapFocus} ref={dialogRef}>
       <div className="confirm-dialog">
-        <h2 id="delete-application-title">确认删除申请</h2>
-        <p>确定删除“{application.company} · {application.role}”吗？删除后无法恢复。</p>
+        <h2 id="delete-application-title">{title}</h2>
+        <p>{description}</p>
         {error ? <p role="alert">{error}</p> : null}
         <div className="form-actions">
           <button disabled={isPending} onClick={onConfirm} type="button">{isPending ? "正在删除…" : "确认删除"}</button>
@@ -162,7 +165,8 @@ export function ApplicationTable({
   showEmptyState = true,
   emptyStateKind = "empty",
   onClearEmptyState,
-  companies = [],
+  companies: catalog = [],
+  canManageCompanies = false,
   companyLoadError,
   pendingCompanySearch = "",
   showPendingCompanies = true,
@@ -173,6 +177,9 @@ export function ApplicationTable({
   const [draft, setDraft] = useState<ApplicationDraft>({ ...EMPTY_APPLICATION_DRAFT });
   const [formResult, setFormResult] = useState<ActionResult | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Application | null>(null);
+  const [companyDeleteTarget, setCompanyDeleteTarget] = useState<SharedCompany | null>(null);
+  const [archivedCompanyIds, setArchivedCompanyIds] = useState<Set<string>>(() => new Set());
+  const companies = useMemo(() => catalog.map((company) => archivedCompanyIds.has(company.id) ? { ...company, archivedAt: "archived" } : company), [catalog, archivedCompanyIds]);
   const [deleteError, setDeleteError] = useState("");
   const [isMutating, setIsMutating] = useState(false);
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set());
@@ -192,7 +199,7 @@ export function ApplicationTable({
   useEffect(() => {
     if (!restoreFocusKeyRef.current) return;
     const exact = document.querySelector<HTMLElement>(`[data-focus-key="${restoreFocusKeyRef.current}"]`);
-    (exact ?? document.querySelector<HTMLElement>("[data-focus-key='create']"))?.focus();
+    (exact ?? document.querySelector<HTMLElement>("[data-focus-key='create']") ?? permissionRegionRef.current)?.focus();
   }, [restoreFocusTick]);
 
   useEffect(() => {
@@ -267,8 +274,15 @@ export function ApplicationTable({
   const closeDelete = () => {
     if (isMutating) return;
     setDeleteTarget(null);
+    setCompanyDeleteTarget(null);
     setDeleteError("");
     restoreFocus();
+  };
+  const requestDeleteCompany = (company: SharedCompany, focusKey: string) => {
+    if (!canManageCompanies || mutationLockRef.current) return;
+    returnFocusKeyRef.current = focusKey;
+    setDeleteError("");
+    setCompanyDeleteTarget(company);
   };
 
   const runMutation = async (operation: () => Promise<ActionResult>, fallbackMessage: string): Promise<ActionResult> => {
@@ -325,11 +339,26 @@ export function ApplicationTable({
     if (onSort) onSort(field, direction);
     else setInternalSort({ field, direction });
   };
+  const confirmDeleteCompany = async () => {
+    if (!companyDeleteTarget || !canManageCompanies || mutationLockRef.current) return;
+    setDeleteError("");
+    const result = await runMutation(() => deleteSharedCompany(companyDeleteTarget.id), "公司删除失败，请重试");
+    if (!result.ok) {
+      setDeleteError(result.message);
+      return;
+    }
+    setArchivedCompanyIds((current) => new Set(current).add(companyDeleteTarget.id));
+    setLiveNotice(`已从共享公司库移除 ${companyDeleteTarget.name}，已有投递记录保留`);
+    setCompanyDeleteTarget(null);
+    restoreFocus();
+  };
 
   const sharedViewProps = {
     applications: records,
     companies,
     pendingCompanies,
+    canManageCompanies,
+    onDeleteCompany: requestDeleteCompany,
     permission: effectivePermission,
     ownerId: selectedMember.id,
     now,
@@ -369,7 +398,7 @@ export function ApplicationTable({
               )}
             </div>
           ) : null}
-          <PendingCompanyTasks companies={pendingCompanies} canEdit={canEdit} isMutating={isMutating} onStartCreate={startCreateForCompany} />
+          <PendingCompanyTasks companies={pendingCompanies} canEdit={canEdit} canManageCompanies={canManageCompanies} isMutating={isMutating} onDeleteCompany={requestDeleteCompany} onStartCreate={startCreateForCompany} />
           {records.length > 0 ? <div aria-label="申请记录表格，可横向和纵向滚动" className="application-table-scroll" role="region" tabIndex={0}>
             <table className="application-table">
               <colgroup>
@@ -413,7 +442,8 @@ export function ApplicationTable({
         </div>
       )}
       {showEmptyState && records.length === 0 && pendingCompanies.length === 0 && editor?.kind !== "create" ? <EmptyState kind={emptyStateKind} onClear={onClearEmptyState} /> : null}
-      {deleteTarget ? <ConfirmDeleteDialog application={deleteTarget} error={deleteError} isPending={isMutating} onClose={closeDelete} onConfirm={() => void confirmDelete()} /> : null}
+      {deleteTarget ? <ConfirmDeleteDialog title="确认删除申请" description={`确定删除“${deleteTarget.company} · ${deleteTarget.role}”吗？删除后无法恢复。`} error={deleteError} isPending={isMutating} onClose={closeDelete} onConfirm={() => void confirmDelete()} /> : null}
+      {companyDeleteTarget ? <ConfirmDeleteDialog title="确认删除共享公司" description={`确定删除“${companyDeleteTarget.name}”吗？该公司将从所有成员的待投递列表和公司选择框中移除。已有投递记录、进度和官网信息保留，不会自动合并不同名称的记录。`} error={deleteError} isPending={isMutating} onClose={closeDelete} onConfirm={() => void confirmDeleteCompany()} /> : null}
     </section>
   );
 }

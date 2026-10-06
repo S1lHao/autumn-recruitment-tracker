@@ -6,9 +6,11 @@ const actions = vi.hoisted(() => ({
   createApplication: vi.fn(),
   updateApplication: vi.fn(),
   deleteApplication: vi.fn(),
+  deleteSharedCompany: vi.fn(),
 }));
 
 vi.mock("./actions", () => actions);
+vi.mock("./company-actions", () => ({ deleteSharedCompany: actions.deleteSharedCompany }));
 
 import { ApplicationTable, deadlinePresentation } from "./application-table";
 import type { Application, SharedCompany, WorkspaceMember } from "./types";
@@ -46,6 +48,53 @@ const editableFixture = {
 
 const readOnlyFixture = { ...editableFixture, permission: "readonly" as const };
 
+it.each([false, true])("deletes a shared pending company after confirmation on mobile=%s without deleting applications", async (mobile) => {
+  mediaMatches = mobile;
+  const user = userEvent.setup();
+  render(<ApplicationTable {...editableFixture} canManageCompanies companies={sharedCompanies} />);
+  await user.click(screen.getByRole("button", { name: "删除共享公司 Anthropic" }));
+  expect(screen.getByRole("dialog", { name: "确认删除共享公司" })).toHaveTextContent("所有成员");
+  expect(actions.deleteSharedCompany).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "确认删除" }));
+  expect(actions.deleteSharedCompany).toHaveBeenCalledWith("anthropic");
+  expect(screen.queryByRole("button", { name: "删除共享公司 Anthropic" })).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "访问 OpenAI 官网" })).toBeInTheDocument();
+  expect(actions.deleteApplication).not.toHaveBeenCalled();
+  expect(screen.getByRole("status")).toHaveTextContent("已有投递记录保留");
+  await user.click(screen.getByRole("button", { name: "新增申请" }));
+  await user.click(screen.getByRole("button", { name: "展开共享公司库" }));
+  expect(screen.queryByRole("option", { name: /Anthropic/ })).not.toBeInTheDocument();
+});
+
+it("cancels catalog deletion without a write and keeps the card after a failed write for retry", async () => {
+  const user = userEvent.setup();
+  render(<ApplicationTable {...editableFixture} canManageCompanies companies={sharedCompanies} />);
+  await user.click(screen.getByRole("button", { name: "删除共享公司 Anthropic" }));
+  await user.click(screen.getByRole("button", { name: "取消删除" }));
+  expect(actions.deleteSharedCompany).not.toHaveBeenCalled();
+  actions.deleteSharedCompany.mockResolvedValueOnce({ ok: false, message: "公司删除失败，请稍后重试" });
+  await user.click(screen.getByRole("button", { name: "删除共享公司 Anthropic" }));
+  await user.click(screen.getByRole("button", { name: "确认删除" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("公司删除失败");
+  expect(screen.getByRole("button", { name: "删除共享公司 Anthropic" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "确认删除" }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+it("lets a workspace member manage shared catalog while another member's records remain read-only", () => {
+  render(<ApplicationTable {...readOnlyFixture} canManageCompanies companies={sharedCompanies} />);
+  expect(screen.getByRole("button", { name: "删除共享公司 Anthropic" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "删除 OpenAI 前端工程师" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "编辑 OpenAI 前端工程师" })).not.toBeInTheDocument();
+});
+
+it("preserves an archived company's existing records and website after refresh", () => {
+  render(<ApplicationTable {...editableFixture} canManageCompanies companies={sharedCompanies.map((company) => ({ ...company, archivedAt: "2026-10-06T00:00:00Z" }))} />);
+  expect(screen.queryByRole("heading", { name: "待投递公司" })).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "访问 OpenAI 官网" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "编辑 OpenAI 前端工程师" })).toBeInTheDocument();
+});
+
 const sharedCompanies: SharedCompany[] = [
   { id: "openai", name: "OpenAI", website: "https://openai.com/careers" },
   { id: "anthropic", name: "Anthropic", website: "https://www.anthropic.com/careers" },
@@ -65,6 +114,7 @@ beforeEach(() => {
   actions.createApplication.mockResolvedValue({ ok: true });
   actions.updateApplication.mockResolvedValue({ ok: true });
   actions.deleteApplication.mockResolvedValue({ ok: true });
+  actions.deleteSharedCompany.mockResolvedValue({ ok: true });
   mediaMatches = false;
   mediaListeners.clear();
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
@@ -197,8 +247,8 @@ it("keeps the company picker visible when the shared library is empty", async ()
   await user.click(screen.getByRole("button", { name: "新增申请" }));
 
   await user.click(screen.getByRole("button", { name: "展开共享公司库" }));
-  expect(screen.getByText("共享公司库暂无公司，保存后会自动加入")).toBeInTheDocument();
-  expect(screen.getByText("输入公司名称，保存后自动加入共享公司库")).toBeInTheDocument();
+  expect(screen.getByText("共享公司库暂无公司，可输入新公司")).toBeInTheDocument();
+  expect(screen.getByText("输入新公司名称，保存后自动加入共享公司库")).toBeInTheDocument();
 });
 
 it("shows field errors in place and focuses the error summary", async () => {

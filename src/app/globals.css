@@ -1204,6 +1204,19 @@ button[type="submit"]:hover:not(:disabled),
   background: var(--primary-soft);
 }
 
+.pending-company-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.pending-company-actions .pending-company-delete {
+  border-color: #e7c5c5;
+  color: #a33232;
+  background: #fff6f6;
+}
+
 .application-create {
   display: block;
   margin: 0 0 1.25rem;

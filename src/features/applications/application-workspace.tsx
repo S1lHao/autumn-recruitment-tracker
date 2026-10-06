@@ -68,6 +68,7 @@ export function ApplicationWorkspace({
               allApplications={applications}
               applications={visibleApplications}
               companies={companies}
+              canManageCompanies
               companyLoadError={companyLoadError}
               emptyStateKind={applications.length === 0 ? "empty" : "filtered"}
               key={selectedMember.id}

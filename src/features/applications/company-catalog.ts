@@ -4,6 +4,10 @@ export function normalizeCompanyName(value: string) {
   return value.trim().toLocaleLowerCase();
 }
 
+export function activeCompanies(companies: readonly SharedCompany[]) {
+  return companies.filter((company) => !company.archivedAt);
+}
+
 export function companyWebsiteLabel(website: string) {
   try {
     return new URL(website).hostname.replace(/^www\./, "");
@@ -22,7 +26,7 @@ export function unappliedCompanies(
   applications: readonly Application[],
 ) {
   const appliedCompanyNames = new Set(applications.map((application) => normalizeCompanyName(application.company)));
-  return companies
+  return activeCompanies(companies)
     .filter((company) => !appliedCompanyNames.has(normalizeCompanyName(company.name)))
     .slice()
     .sort((left, right) => left.name.localeCompare(right.name, "zh-CN"));

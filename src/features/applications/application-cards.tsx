@@ -48,6 +48,8 @@ export type ApplicationCardsProps = {
   onStartCreate: (focusKey: string) => void;
   onStartCreateForCompany: (company: SharedCompany, focusKey: string) => void;
   onStartEdit: (application: Application, focusKey: string) => void;
+  canManageCompanies: boolean;
+  onDeleteCompany: (company: SharedCompany, focusKey: string) => void;
 };
 
 export function PendingCompanyTasks({
@@ -55,11 +57,15 @@ export function PendingCompanyTasks({
   canEdit,
   isMutating,
   onStartCreate,
+  canManageCompanies = false,
+  onDeleteCompany,
 }: {
   companies: readonly SharedCompany[];
   canEdit: boolean;
   isMutating: boolean;
   onStartCreate: (company: SharedCompany, focusKey: string) => void;
+  canManageCompanies?: boolean;
+  onDeleteCompany?: (company: SharedCompany, focusKey: string) => void;
 }) {
   if (companies.length === 0) return null;
   return (
@@ -85,15 +91,20 @@ export function PendingCompanyTasks({
                   {companyWebsiteLabel(company.website)}
                 </a>
               ) : <span>暂无官网</span>}
-              {canEdit ? (
-                <button
-                  aria-label={`为 ${company.name} 添加岗位`}
-                  data-focus-key={`pending-${company.id}`}
-                  disabled={isMutating}
-                  onClick={() => onStartCreate(company, `pending-${company.id}`)}
-                  type="button"
-                >添加岗位</button>
-              ) : null}
+              <div className="pending-company-buttons">
+                {canEdit ? (
+                  <button
+                    aria-label={`为 ${company.name} 添加岗位`}
+                    data-focus-key={`pending-${company.id}`}
+                    disabled={isMutating}
+                    onClick={() => onStartCreate(company, `pending-${company.id}`)}
+                    type="button"
+                  >添加岗位</button>
+                ) : null}
+                {canManageCompanies && onDeleteCompany ? (
+                  <button aria-label={`删除共享公司 ${company.name}`} className="pending-company-delete" data-focus-key={`delete-company-${company.id}`} disabled={isMutating} onClick={() => onDeleteCompany(company, `delete-company-${company.id}`)} type="button">删除</button>
+                ) : null}
+              </div>
             </div>
           </article>
         ))}
@@ -125,6 +136,8 @@ export function ApplicationCards({
   onStartCreate,
   onStartCreateForCompany,
   onStartEdit,
+  canManageCompanies,
+  onDeleteCompany,
 }: ApplicationCardsProps) {
   const canEdit = permission === "own" || permission === "temporary";
   const canDelete = permission === "own";
@@ -135,7 +148,7 @@ export function ApplicationCards({
       ) : (
         <ApplicationForm action={createAction} companies={companies} draft={draft} formId="cards-create-application" isPending={isMutating} onCancel={onCancelEditor} onDraftChange={onDraftChange} onResult={onFormResult} onSuccess={onFormSuccess} ownerId={ownerId} result={formResult} title="新增投递记录" />
       )) : null}
-      <PendingCompanyTasks companies={pendingCompanies} canEdit={canEdit} isMutating={isMutating} onStartCreate={onStartCreateForCompany} />
+      <PendingCompanyTasks companies={pendingCompanies} canEdit={canEdit} canManageCompanies={canManageCompanies} isMutating={isMutating} onDeleteCompany={onDeleteCompany} onStartCreate={onStartCreateForCompany} />
       <div className="application-card-list">
         {applications.map((application) => (
           <article className="application-card" key={application.id}>

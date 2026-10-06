@@ -47,6 +47,7 @@ export type SharedCompany = {
   id: string;
   name: string;
   website: string | null;
+  archivedAt?: string | null;
 };
 
 export type ApplicationFilters = {

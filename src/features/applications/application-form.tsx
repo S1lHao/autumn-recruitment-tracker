@@ -3,6 +3,7 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { ActionResult } from "@/features/shared/result";
+import { activeCompanies } from "./company-catalog";
 import { APPLICATION_STAGES, type Application, type ApplicationInput, type ApplicationStage, type SharedCompany } from "./types";
 
 export type ApplicationDraft = Omit<ApplicationInput, "appliedOn" | "deadline" | "companyWebsite"> & {
@@ -132,9 +133,9 @@ export function ApplicationForm({
 
   const visibleCompanies = useMemo(() => {
     const query = draft.company.trim().toLocaleLowerCase();
-    if (!query) return companies;
-    return companies.filter((company) => company.name.toLocaleLowerCase().includes(query));
+    return activeCompanies(companies).filter((company) => !query || company.name.toLocaleLowerCase().includes(query));
   }, [companies, draft.company]);
+  const hasActiveCompanies = companies.some((company) => !company.archivedAt);
 
   useEffect(() => {
     if (result && !result.ok) errorSummaryRef.current?.focus();
@@ -257,12 +258,12 @@ export function ApplicationForm({
                 </div>
               ) : (
                 <p className="company-combobox-empty" id={`${formId}-company-options`} role="status">
-                  {companies.length === 0 ? "共享公司库暂无公司，保存后会自动加入" : "没有匹配公司，可直接输入以创建"}
+                  {!hasActiveCompanies ? "共享公司库暂无公司，可输入新公司" : "没有匹配公司，可直接输入以创建"}
                 </p>
               )
             ) : null}
           </div>
-          <span className="field-hint" id={`${formId}-company-hint`}>{companies.length === 0 ? "输入公司名称，保存后自动加入共享公司库" : "从共享公司库选择，或直接输入新公司"}</span>
+          <span className="field-hint" id={`${formId}-company-hint`}>{!hasActiveCompanies ? "输入新公司名称，保存后自动加入共享公司库" : "从共享公司库选择，或直接输入新公司"}</span>
           {fieldError("company") ? <span className="field-error" id={`${formId}-company-error`}>{fieldError("company")}</span> : null}
         </div>
         <label htmlFor={`${formId}-companyWebsite`}>
